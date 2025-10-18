@@ -288,7 +288,7 @@ export default function Home() {
                     placeholder={`e.g., "Frontend Resume" or "My Main Resume"`}
                     value={upload.label}
                     onChange={(e) => handleLabelChange(index, e.target.value)}
-                    className="px-4 py-2 border border-slate-300 focus:border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                    className="px-4 py-2 border border-slate-300 focus:border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 w-full text-black"
                   />
                 </div>
                 <div className="flex-1">
@@ -301,7 +301,7 @@ export default function Home() {
                     onChange={(e) =>
                       handleFileChange(index, e.target.files?.[0] || null)
                     }
-                    className="block hover:file:bg-blue-100 file:bg-blue-50 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-lg w-full file:font-semibold text-slate-500 file:text-blue-700 text-sm file:text-sm file:cursor-pointer"
+                    className="block hover:file:bg-blue-100 file:bg-blue-50 file:mr-4 file:px-4 file:py-2 file:border-0 file:rounded-lg w-full file:font-semibold text-black text-slate-500 file:text-blue-700 text-sm file:text-sm file:cursor-pointer"
                   />
                 </div>
               </div>
@@ -368,7 +368,7 @@ export default function Home() {
                 value={jdText}
                 onChange={(e) => setJdText(e.target.value)}
                 rows={12}
-                className="px-4 py-3 border border-slate-300 focus:border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-full font-mono text-sm"
+                className="px-4 py-3 border border-slate-300 focus:border-transparent rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 w-full font-mono text-black text-sm"
               />
             </div>
           </div>
