@@ -1,3 +1,12 @@
 node_modules
 .env
 test_files
+.DS_Store
+*.db
+data/
+myUploads/
+
+# Frontend
+frontend/.next/
+frontend/out/
+frontend/.turbo/

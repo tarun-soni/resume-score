@@ -3,7 +3,7 @@ import { getPrompt } from '../prompt';
 import { tempJD } from '../test_files/temp_jd';
 import { test_resume } from '../test_files/test_resume';
 import fs from 'fs';
-const pdfParse = require('pdf-parse');
+const { PDFParse } = require('pdf-parse');
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 
 // 🧠 Helper: Create the prompt for LLM
@@ -30,10 +30,25 @@ export const analyzeController = async (req: any, res: any) => {
         .json({ error: 'OPENROUTER_API_KEY not set in .env' });
     }
 
-    // 🧾 Extract text from resume PDF
+    // 🧾 Extract text from resume PDF with timeout
     const dataBuffer = fs.readFileSync(resumeFile.path);
-    const parsedPDF = await pdfParse(dataBuffer);
-    const resumeText = parsedPDF.text.trim();
+
+    const parser = new PDFParse({ data: dataBuffer });
+
+    // Create a timeout promise that rejects after 30 seconds
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('PDF parsing timeout after 30 seconds'));
+      }, 30000);
+    });
+
+    // Race between parsing and timeout
+    const result = await Promise.race([parser.getText(), timeoutPromise]);
+
+    // Clean up the parser
+    await parser.destroy();
+
+    const resumeText = result.text.trim();
 
     console.log('✅ Resume text length:', resumeText.length);
 
@@ -72,7 +87,7 @@ export const analyzeController = async (req: any, res: any) => {
       model: response.data.model,
       analysis: message.content,
       resumeText: resumeText,
-      numPages: parsedPDF.numpages,
+      numPages: result.numpages,
     });
   } catch (err: any) {
     console.error('❌ Error in /analyze:', err?.message || err);
