@@ -25,6 +25,7 @@ interface ResumeUpload {
 
 export default function Home() {
   const [resumes, setResumes] = useState<Resume[]>([]);
+  const [selectedResumeIds, setSelectedResumeIds] = useState<string[]>([]);
   const [companyName, setCompanyName] = useState('');
   const [jdText, setJdText] = useState('');
   const [resumeUploads, setResumeUploads] = useState<ResumeUpload[]>([
@@ -37,7 +38,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [results, setResults] = useState<AnalysisResult[]>([]);
-  const [selectedResumeId, setSelectedResumeId] = useState<string | null>(null);
+  const [showUploadSection, setShowUploadSection] = useState(false);
 
   useEffect(() => {
     fetchResumes();
@@ -48,8 +49,24 @@ export default function Home() {
       const response = await fetch(`${API_BASE}/resumes`);
       const data = await response.json();
       setResumes(data);
+      // Select all resumes by default
+      setSelectedResumeIds(data.map((r: Resume) => r.id));
     } catch (error) {
       console.error('Error fetching resumes:', error);
+    }
+  };
+
+  const toggleResumeSelection = (id: string) => {
+    setSelectedResumeIds((prev) =>
+      prev.includes(id) ? prev.filter((rid) => rid !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedResumeIds.length === resumes.length) {
+      setSelectedResumeIds([]);
+    } else {
+      setSelectedResumeIds(resumes.map((r) => r.id));
     }
   };
 
@@ -131,9 +148,13 @@ export default function Home() {
       return;
     }
 
+    if (selectedResumeIds.length === 0) {
+      alert('Please select at least one resume to analyze');
+      return;
+    }
+
     setAnalyzing(true);
     setResults([]);
-    setSelectedResumeId(null);
 
     try {
       const response = await fetch(`${API_BASE}/analyze-batch`, {
@@ -144,6 +165,7 @@ export default function Home() {
         body: JSON.stringify({
           jd_text: jdText,
           company_name: companyName || 'Unknown',
+          resume_ids: selectedResumeIds,
         }),
       });
 
@@ -154,9 +176,6 @@ export default function Home() {
 
       const data = await response.json();
       setResults(data.results);
-      if (data.results.length > 0) {
-        setSelectedResumeId(data.results[0].resume_id);
-      }
     } catch (error: any) {
       alert(`Error analyzing resumes: ${error.message}`);
     } finally {
@@ -182,13 +201,12 @@ export default function Home() {
       await fetchResumes();
       // Clear results if deleted resume was in them
       setResults([]);
-      setSelectedResumeId(null);
+      // Remove from selected IDs
+      setSelectedResumeIds((prev) => prev.filter((rid) => rid !== id));
     } catch (error: any) {
       alert(`Error deleting resume: ${error.message}`);
     }
   };
-
-  const selectedResult = results.find((r) => r.resume_id === selectedResumeId);
 
   return (
     <div className="bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-8 min-h-screen">
@@ -209,7 +227,22 @@ export default function Home() {
           <div className="flex justify-between items-center mb-4">
             <h2 className="font-semibold text-slate-900 text-xl">
               Stored Resumes ({resumes.length})
+              {resumes.length > 0 && (
+                <span className="ml-2 text-blue-600 text-sm font-normal">
+                  ({selectedResumeIds.length} selected)
+                </span>
+              )}
             </h2>
+            {resumes.length > 0 && (
+              <button
+                onClick={toggleSelectAll}
+                className="text-blue-600 hover:text-blue-700 font-medium text-sm transition"
+              >
+                {selectedResumeIds.length === resumes.length
+                  ? 'Deselect All'
+                  : 'Select All'}
+              </button>
+            )}
           </div>
           {resumes.length === 0 ? (
             <div className="py-8 text-center">
@@ -233,15 +266,27 @@ export default function Home() {
               {resumes.map((resume) => (
                 <div
                   key={resume.id}
-                  className="flex justify-between items-center bg-slate-50 p-4 border border-slate-200 hover:border-slate-300 rounded-lg transition"
+                  className={`flex justify-between items-center p-4 border-2 rounded-lg transition ${
+                    selectedResumeIds.includes(resume.id)
+                      ? 'bg-blue-50 border-blue-300'
+                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                  }`}
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-slate-900 truncate">
-                      {resume.identifier}
-                    </p>
-                    <p className="mt-1 text-slate-500 text-xs">
-                      {new Date(resume.created_at).toLocaleDateString()}
-                    </p>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedResumeIds.includes(resume.id)}
+                      onChange={() => toggleResumeSelection(resume.id)}
+                      className="w-5 h-5 text-blue-600 border-slate-300 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-900 truncate">
+                        {resume.identifier}
+                      </p>
+                      <p className="mt-1 text-slate-500 text-xs">
+                        {new Date(resume.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
                   </div>
                   <button
                     onClick={() => handleDeleteResume(resume.id)}
@@ -270,9 +315,33 @@ export default function Home() {
 
         {/* Upload New Resumes */}
         <div className="bg-white shadow-sm mb-6 p-6 border border-slate-200 rounded-xl">
-          <h2 className="mb-4 font-semibold text-slate-900 text-xl">
-            Upload Resumes (Max 5)
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="font-semibold text-slate-900 text-xl">
+              Upload Resumes (Max 5)
+            </h2>
+            <button
+              onClick={() => setShowUploadSection(!showUploadSection)}
+              className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium text-sm transition"
+            >
+              {showUploadSection ? (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                  </svg>
+                  Hide Upload Form
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                  Show Upload Form
+                </>
+              )}
+            </button>
+          </div>
+          {showUploadSection && (
+            <>
           <div className="space-y-4">
             {resumeUploads.map((upload, index) => (
               <div
@@ -339,6 +408,8 @@ export default function Home() {
               'Upload Resumes'
             )}
           </button>
+            </>
+          )}
         </div>
 
         {/* Job Description */}
@@ -406,174 +477,207 @@ export default function Home() {
           </button>
         </div>
 
-        {/* Results - Horizontal Scrollable Cards */}
+        {/* Results - Ranking Summary and Detailed Breakdowns */}
         {results.length > 0 && (
-          <div className="bg-white shadow-sm p-6 border border-slate-200 rounded-xl">
-            <h2 className="mb-6 font-bold text-slate-900 text-2xl">
-              Results - Best to Worst
-            </h2>
+          <div className="space-y-6">
+            {/* Ranking Summary - Horizontal Scrollable Cards */}
+            <div className="bg-white shadow-sm p-6 border border-slate-200 rounded-xl">
+              <h2 className="mb-6 font-bold text-slate-900 text-2xl">
+                Results - Best to Worst
+              </h2>
 
-            {/* Horizontal Scroll Container */}
-            <div className="-mx-2 px-2 pb-4 overflow-x-auto">
-              <div className="flex gap-4 min-w-min">
-                {results.map((result, idx) => {
-                  const isSelected = selectedResumeId === result.resume_id;
-                  const borderColor =
-                    idx === 0
-                      ? 'border-green-500'
-                      : idx === 1
-                      ? 'border-blue-500'
-                      : idx === 2
-                      ? 'border-amber-500'
-                      : 'border-slate-300';
+              <div className="-mx-2 px-2 pb-4 overflow-x-auto">
+                <div className="flex gap-4 min-w-min">
+                  {results.map((result, idx) => {
+                    const borderColor =
+                      idx === 0
+                        ? 'border-green-500'
+                        : idx === 1
+                        ? 'border-blue-500'
+                        : idx === 2
+                        ? 'border-amber-500'
+                        : 'border-slate-300';
 
-                  const bgColor =
-                    idx === 0
-                      ? 'bg-green-50'
-                      : idx === 1
-                      ? 'bg-blue-50'
-                      : idx === 2
-                      ? 'bg-amber-50'
-                      : 'bg-white';
+                    const bgColor =
+                      idx === 0
+                        ? 'bg-green-50'
+                        : idx === 1
+                        ? 'bg-blue-50'
+                        : idx === 2
+                        ? 'bg-amber-50'
+                        : 'bg-white';
 
-                  return (
-                    <div
-                      key={result.resume_id}
-                      onClick={() => setSelectedResumeId(result.resume_id)}
-                      className={`flex-shrink-0 w-72 p-6 border-2 rounded-xl cursor-pointer transition-all ${borderColor} ${bgColor} ${
-                        isSelected
-                          ? 'ring-4 ring-purple-500 ring-opacity-50 shadow-lg'
-                          : 'hover:shadow-md'
-                      }`}
-                    >
-                      <div className="flex justify-between items-start mb-3">
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-700 text-2xl">
-                            #{idx + 1}
-                          </span>
-                          {idx === 0 && <span className="text-2xl">🏆</span>}
-                          {idx === 1 && <span className="text-2xl">🥈</span>}
-                          {idx === 2 && <span className="text-2xl">🥉</span>}
-                        </div>
-                        {result.error ? (
-                          <span className="font-semibold text-red-600 text-sm">
-                            Error
-                          </span>
-                        ) : (
-                          <div className="text-right">
-                            <div className="font-black text-slate-900 text-4xl">
-                              {result.overall_score}
-                            </div>
-                            <div className="font-medium text-slate-500 text-xs">
-                              Score
-                            </div>
+                    return (
+                      <div
+                        key={result.resume_id}
+                        className={`flex-shrink-0 w-72 p-6 border-2 rounded-xl transition-all ${borderColor} ${bgColor} hover:shadow-md`}
+                      >
+                        <div className="flex justify-between items-start mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-700 text-2xl">
+                              #{idx + 1}
+                            </span>
+                            {idx === 0 && <span className="text-2xl">🏆</span>}
+                            {idx === 1 && <span className="text-2xl">🥈</span>}
+                            {idx === 2 && <span className="text-2xl">🥉</span>}
                           </div>
+                          {result.error ? (
+                            <span className="font-semibold text-red-600 text-sm">
+                              Error
+                            </span>
+                          ) : (
+                            <div className="text-right">
+                              <div className="font-black text-slate-900 text-4xl">
+                                {result.overall_score}
+                              </div>
+                              <div className="font-medium text-slate-500 text-xs">
+                                Score
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <h3 className="mb-2 font-bold text-slate-900 text-lg line-clamp-2">
+                          {result.identifier}
+                        </h3>
+                        {result.error ? (
+                          <p className="text-red-600 text-sm">{result.error}</p>
+                        ) : (
+                          <p className="text-slate-600 text-sm line-clamp-3">
+                            {result.analysis?.Verdict || 'See detailed analysis below'}
+                          </p>
                         )}
                       </div>
-                      <h3 className="mb-2 font-bold text-slate-900 text-lg line-clamp-2">
-                        {result.identifier}
-                      </h3>
-                      {result.error ? (
-                        <p className="text-red-600 text-sm">{result.error}</p>
-                      ) : (
-                        <p className="text-slate-600 text-sm">
-                          {result.analysis?.Verdict || 'Click to view details'}
-                        </p>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
 
-            {/* Detailed Analysis for Selected Resume */}
-            {selectedResult && !selectedResult.error && (
-              <div className="bg-gradient-to-br from-slate-50 to-slate-100 mt-8 p-6 border-2 border-purple-200 rounded-xl">
-                <h3 className="flex items-center gap-2 mb-6 font-bold text-slate-900 text-2xl">
-                  <span className="text-purple-600">📊</span>
-                  Detailed Analysis: {selectedResult.identifier}
-                </h3>
+            {/* Detailed Analysis for All Resumes */}
+            <div className="space-y-6">
+              <h2 className="font-bold text-slate-900 text-2xl">
+                Detailed Breakdown for All Resumes
+              </h2>
 
-                {/* Score Breakdown Grid */}
-                <div className="gap-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mb-6">
-                  {Object.entries(selectedResult.analysis)
-                    .filter(
-                      ([key]) =>
-                        ![
-                          'Overall Score',
-                          'Verdict',
-                          'Contradictions',
-                          'GlobalSuggestions',
-                          'raw',
-                        ].includes(key)
-                    )
-                    .map(([key, value]: [string, any]) => (
-                      <div
-                        key={key}
-                        className="bg-white shadow-sm hover:shadow-md p-5 border border-slate-200 rounded-lg transition"
-                      >
-                        <div className="flex justify-between items-center mb-3">
-                          <h4 className="font-semibold text-slate-700 text-sm">
-                            {key}
-                          </h4>
-                          <span className="font-black text-blue-600 text-3xl">
-                            {value.score}
-                          </span>
+              {results.map((result, idx) => {
+                if (result.error) {
+                  return (
+                    <div key={result.resume_id} className="bg-white shadow-sm p-6 border-2 border-red-200 rounded-xl">
+                      <h3 className="flex items-center gap-2 mb-4 font-bold text-slate-900 text-2xl">
+                        <span className="text-red-600">❌</span>
+                        #{idx + 1} {result.identifier}
+                      </h3>
+                      <p className="text-red-600">{result.error}</p>
+                    </div>
+                  );
+                }
+
+                const borderColor =
+                  idx === 0
+                    ? 'border-green-300'
+                    : idx === 1
+                    ? 'border-blue-300'
+                    : idx === 2
+                    ? 'border-amber-300'
+                    : 'border-slate-300';
+
+                return (
+                  <div key={result.resume_id} className={`bg-white shadow-sm p-6 border-2 ${borderColor} rounded-xl`}>
+                    <h3 className="flex items-center gap-3 mb-6 font-bold text-slate-900 text-2xl">
+                      <span className="flex items-center gap-2">
+                        <span className="text-slate-700">#{idx + 1}</span>
+                        {idx === 0 && <span className="text-2xl">🏆</span>}
+                        {idx === 1 && <span className="text-2xl">🥈</span>}
+                        {idx === 2 && <span className="text-2xl">🥉</span>}
+                      </span>
+                      <span className="text-slate-900">{result.identifier}</span>
+                      <span className="bg-blue-100 ml-auto px-4 py-2 rounded-lg font-black text-blue-700 text-3xl">
+                        {result.overall_score}
+                      </span>
+                    </h3>
+
+                    {/* Score Breakdown Grid */}
+                    <div className="gap-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mb-6">
+                      {Object.entries(result.analysis)
+                        .filter(
+                          ([key]) =>
+                            ![
+                              'Overall Score',
+                              'Verdict',
+                              'Contradictions',
+                              'GlobalSuggestions',
+                              'raw',
+                            ].includes(key)
+                        )
+                        .map(([key, value]: [string, any]) => (
+                          <div
+                            key={key}
+                            className="bg-slate-50 shadow-sm hover:shadow-md p-5 border border-slate-200 rounded-lg transition"
+                          >
+                            <div className="flex justify-between items-center mb-3">
+                              <h4 className="font-semibold text-slate-700 text-sm">
+                                {key}
+                              </h4>
+                              <span className="font-black text-blue-600 text-3xl">
+                                {value.score}
+                              </span>
+                            </div>
+                            <p className="text-slate-600 text-xs leading-relaxed">
+                              {value.reason}
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+
+                    {/* Verdict */}
+                    {result.analysis.Verdict && (
+                      <div className="bg-purple-50 mb-6 p-5 border-2 border-purple-200 rounded-lg">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-xl">⚖️</span>
+                          <strong className="font-bold text-purple-900 text-lg">
+                            Verdict:
+                          </strong>
                         </div>
-                        <p className="text-slate-600 text-xs leading-relaxed">
-                          {value.reason}
-                        </p>
+                        <span className="font-semibold text-purple-800 text-lg">
+                          {result.analysis.Verdict}
+                        </span>
                       </div>
-                    ))}
-                </div>
+                    )}
 
-                {/* Verdict */}
-                {selectedResult.analysis.Verdict && (
-                  <div className="bg-purple-50 mb-6 p-5 border-2 border-purple-200 rounded-lg">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-xl">⚖️</span>
-                      <strong className="font-bold text-purple-900 text-lg">
-                        Verdict:
-                      </strong>
-                    </div>
-                    <span className="font-semibold text-purple-800 text-lg">
-                      {selectedResult.analysis.Verdict}
-                    </span>
+                    {/* Top Suggestions */}
+                    {result.analysis.GlobalSuggestions &&
+                      Array.isArray(result.analysis.GlobalSuggestions) &&
+                      result.analysis.GlobalSuggestions.length > 0 && (
+                        <div className="bg-amber-50 p-5 border-2 border-amber-200 rounded-lg">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="text-xl">💡</span>
+                            <strong className="font-bold text-amber-900 text-lg">
+                              Top Improvements:
+                            </strong>
+                          </div>
+                          <ul className="space-y-2">
+                            {result.analysis.GlobalSuggestions.map(
+                              (suggestion: string, i: number) => (
+                                <li
+                                  key={i}
+                                  className="flex items-start gap-3 text-amber-800"
+                                >
+                                  <span className="flex flex-shrink-0 justify-center items-center bg-amber-200 rounded-full w-6 h-6 font-bold text-sm">
+                                    {i + 1}
+                                  </span>
+                                  <span className="text-sm leading-relaxed">
+                                    {suggestion}
+                                  </span>
+                                </li>
+                              )
+                            )}
+                          </ul>
+                        </div>
+                      )}
                   </div>
-                )}
-
-                {/* Top Suggestions */}
-                {selectedResult.analysis.GlobalSuggestions &&
-                  Array.isArray(selectedResult.analysis.GlobalSuggestions) &&
-                  selectedResult.analysis.GlobalSuggestions.length > 0 && (
-                    <div className="bg-amber-50 p-5 border-2 border-amber-200 rounded-lg">
-                      <div className="flex items-center gap-2 mb-3">
-                        <span className="text-xl">💡</span>
-                        <strong className="font-bold text-amber-900 text-lg">
-                          Top Improvements:
-                        </strong>
-                      </div>
-                      <ul className="space-y-2">
-                        {selectedResult.analysis.GlobalSuggestions.map(
-                          (suggestion: string, i: number) => (
-                            <li
-                              key={i}
-                              className="flex items-start gap-3 text-amber-800"
-                            >
-                              <span className="flex flex-shrink-0 justify-center items-center bg-amber-200 rounded-full w-6 h-6 font-bold text-sm">
-                                {i + 1}
-                              </span>
-                              <span className="text-sm leading-relaxed">
-                                {suggestion}
-                              </span>
-                            </li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-                  )}
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

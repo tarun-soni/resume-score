@@ -263,7 +263,7 @@ app.post('/jds', async (req: any, res: any) => {
 // POST /analyze-batch - Analyze all resumes against a JD
 app.post('/analyze-batch', async (req: any, res: any) => {
   try {
-    const { jd_id, jd_text, company_name } = req.body;
+    const { jd_id, jd_text, company_name, resume_ids } = req.body;
 
     if (!jd_text) {
       return res.status(400).json({ error: 'jd_text is required' });
@@ -285,8 +285,17 @@ app.post('/analyze-batch', async (req: any, res: any) => {
       saveDatabase();
     }
 
-    // Get all resumes
-    const resumesResult = db.exec('SELECT id, identifier, resume_parsed_text FROM resumes');
+    // Get resumes (either all or specific ones based on resume_ids)
+    let resumesResult: any;
+    if (resume_ids && Array.isArray(resume_ids) && resume_ids.length > 0) {
+      // Build a parameterized query for specific resume IDs
+      const placeholders = resume_ids.map(() => '?').join(',');
+      const query = `SELECT id, identifier, resume_parsed_text FROM resumes WHERE id IN (${placeholders})`;
+      resumesResult = db.exec(query, resume_ids);
+    } else {
+      // Get all resumes if no specific IDs provided
+      resumesResult = db.exec('SELECT id, identifier, resume_parsed_text FROM resumes');
+    }
 
     if (resumesResult.length === 0 || resumesResult[0].values.length === 0) {
       return res.status(400).json({ error: 'No resumes found in database' });
@@ -330,7 +339,7 @@ app.post('/analyze-batch', async (req: any, res: any) => {
         const analysisText = message.content;
         console.log(`✅ Received response for ${resume.identifier}, length: ${analysisText.length}`);
 
-        let analysisJson;
+        let analysisJson: any;
         try {
           analysisJson = JSON.parse(analysisText);
           console.log(`✅ Parsed JSON successfully for ${resume.identifier}`);
