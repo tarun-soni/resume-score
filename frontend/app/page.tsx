@@ -583,7 +583,7 @@ export default function Home() {
 
                 return (
                   <div key={result.resume_id} className={`bg-white shadow-sm p-6 border-2 ${borderColor} rounded-xl`}>
-                    <h3 className="flex items-center gap-3 mb-6 font-bold text-slate-900 text-2xl">
+                    <h3 className="flex items-center gap-3 mb-4 font-bold text-slate-900 text-2xl">
                       <span className="flex items-center gap-2">
                         <span className="text-slate-700">#{idx + 1}</span>
                         {idx === 0 && <span className="text-2xl">🏆</span>}
@@ -596,6 +596,16 @@ export default function Home() {
                       </span>
                     </h3>
 
+                    {/* Location Badge */}
+                    {result.analysis.Location && result.analysis.Location !== 'Not specified' && (
+                      <div className="flex items-center gap-2 mb-6 text-sm">
+                        <span className="text-slate-600">📍</span>
+                        <span className="bg-indigo-50 px-3 py-1 border border-indigo-200 rounded-full text-indigo-700 font-medium">
+                          Target Location: {result.analysis.Location}
+                        </span>
+                      </div>
+                    )}
+
                     {/* Score Breakdown Grid */}
                     <div className="gap-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 mb-6">
                       {Object.entries(result.analysis)
@@ -606,6 +616,7 @@ export default function Home() {
                               'Verdict',
                               'Contradictions',
                               'GlobalSuggestions',
+                              'Location',
                               'raw',
                             ].includes(key)
                         )
