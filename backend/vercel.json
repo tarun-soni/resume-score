@@ -2,15 +2,11 @@
   "buildCommand": "npm install && npm run build",
   "installCommand": "npm install",
   "framework": null,
-  "functions": {
-    "backend/server.js": {
-      "runtime": "nodejs18.x"
-    }
-  },
+  "outputDirectory": ".",
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/backend/server.js"
+      "destination": "/api/server.js"
     }
   ]
 }
