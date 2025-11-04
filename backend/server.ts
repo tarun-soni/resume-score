@@ -298,8 +298,8 @@ app.post('/resumes', upload.single('resume'), async (req: any, res: any) => {
 // GET /resumes - Get all stored resumes
 app.get('/resumes', async (req: any, res: any) => {
   try {
-    console.log('resumes');
-    const result = db.exec(
+    const currentDb = getDb();
+    const result = currentDb.exec(
       'SELECT id, identifier, created_at FROM resumes ORDER BY created_at DESC'
     );
 
