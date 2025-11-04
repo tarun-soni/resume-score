@@ -1,16 +1,16 @@
 {
-  "buildCommand": "npm install && npm run build && mkdir -p ../api && cp api/server.js ../api/server.js",
+  "buildCommand": "npm install && npm run build",
   "installCommand": "npm install",
   "framework": null,
   "functions": {
-    "api/server.js": {
+    "backend/server.js": {
       "runtime": "nodejs18.x"
     }
   },
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "/api/server.js"
+      "destination": "/backend/server.js"
     }
   ]
 }
