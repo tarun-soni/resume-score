@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node dist/server.js",
     "build": "tsc",
-    "postbuild": "mkdir -p ../api && cp dist/server.js ../api/server.js",
+    "postbuild": "mkdir -p ../api ../public && cp dist/server.js ../api/server.js && touch ../public/.gitkeep",
     "dev": "ts-node-dev --respawn server.ts",
     "nodemon": "nodemon server.ts"
   },
