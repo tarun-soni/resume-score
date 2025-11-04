@@ -1,7 +1,5 @@
 import axios from 'axios';
 import { getPrompt } from '../prompt';
-import { tempJD } from '../test_files/temp_jd';
-import { test_resume } from '../test_files/test_resume';
 import fs from 'fs';
 const { PDFParse } = require('pdf-parse');
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
