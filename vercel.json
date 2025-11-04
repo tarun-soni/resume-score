@@ -1,6 +1,6 @@
 {
-  "buildCommand": "mkdir -p public api && cd backend && npm install && npm run build",
-  "installCommand": "cd backend && npm install",
+  "buildCommand": "mkdir -p public api && if [ -d backend ]; then cd backend && npm install && npm run build; else echo 'Backend folder not found, skipping build'; fi",
+  "installCommand": "if [ -d backend ]; then cd backend && npm install; else echo 'Backend folder not found, skipping install'; fi",
   "framework": null,
   "outputDirectory": "public",
   "rewrites": [
