@@ -15,11 +15,23 @@ const { PDFParse } = require('pdf-parse');
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const app = express();
 
+// For Vercel serverless deployment - use CommonJS export for proper serverless function recognition
+module.exports = app;
+
 // Enable CORS for frontend
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'http://localhost:3000',
+];
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PUT, DELETE, OPTIONS'
+    );
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -28,9 +40,22 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// Apply database readiness middleware to all routes except health check
+// Health check should work even if DB is not ready
+app.use((req, res, next) => {
+  if (req.path === '/health' || req.path === '/') {
+    return next();
+  }
+  return dbReadyMiddleware(req, res, next);
+});
+
+// On Vercel, use /tmp for uploads; otherwise use myUploads directory
+const uploadDir = process.env.VERCEL ? '/tmp' : './myUploads';
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, './myUploads');
+    cb(null, uploadDir);
   },
 
   filename: function (req, file, cb) {
@@ -40,87 +65,144 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
-// Initialize or open SQLite DB at backend/data/resumes.db (using sql.js in-memory WASM)
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// Initialize or open SQLite DB (using sql.js in-memory WASM)
+// On Vercel, use /tmp for writable filesystem; otherwise use data directory
+const DATA_DIR = process.env.VERCEL
+  ? '/tmp'
+  : path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, 'resumes.db');
 
 // sql.js Database instance (will be set in async init below)
 let SQL: any = null;
 let db: any = null;
+let dbReady = false;
+let dbInitPromise: Promise<void> | null = null;
+let dbInitError: Error | null = null;
 
 async function initDatabase() {
-  SQL = await initSqlJs({});
+  try {
+    SQL = await initSqlJs({});
 
-  if (fs.existsSync(DB_PATH)) {
-    const filebuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(new Uint8Array(filebuffer));
+    if (fs.existsSync(DB_PATH)) {
+      const filebuffer = fs.readFileSync(DB_PATH);
+      db = new SQL.Database(new Uint8Array(filebuffer));
 
-    console.log('db loaded successfully');
-  } else {
-    db = new SQL.Database();
-    // Create all tables
-    db.run(`
-      CREATE TABLE IF NOT EXISTS resumes (
-        id TEXT PRIMARY KEY,
-        identifier TEXT NOT NULL UNIQUE,
-        resume_file BLOB NOT NULL,
-        resume_parsed_text TEXT,
-        created_at TEXT NOT NULL
-      );
-    `);
-    db.run(`
-      CREATE TABLE IF NOT EXISTS jds (
-        id TEXT PRIMARY KEY,
-        company_name TEXT NOT NULL,
-        jd_text TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-    `);
-    db.run(`
-      CREATE TABLE IF NOT EXISTS analysis (
-        id TEXT PRIMARY KEY,
-        resume_id TEXT NOT NULL,
-        jd_id TEXT NOT NULL,
-        analysis TEXT NOT NULL,
-        overall_score INTEGER,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY (resume_id) REFERENCES resumes(id),
-        FOREIGN KEY (jd_id) REFERENCES jds(id)
-      );
-    `);
-    // persist initial DB
-    const data = db.export();
-    fs.writeFileSync(DB_PATH, Buffer.from(data));
+      console.log('db loaded successfully');
+    } else {
+      db = new SQL.Database();
+      // Create all tables
+      db.run(`
+        CREATE TABLE IF NOT EXISTS resumes (
+          id TEXT PRIMARY KEY,
+          identifier TEXT NOT NULL UNIQUE,
+          resume_file BLOB NOT NULL,
+          resume_parsed_text TEXT,
+          created_at TEXT NOT NULL
+        );
+      `);
+      db.run(`
+        CREATE TABLE IF NOT EXISTS jds (
+          id TEXT PRIMARY KEY,
+          company_name TEXT NOT NULL,
+          jd_text TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+      `);
+      db.run(`
+        CREATE TABLE IF NOT EXISTS analysis (
+          id TEXT PRIMARY KEY,
+          resume_id TEXT NOT NULL,
+          jd_id TEXT NOT NULL,
+          analysis TEXT NOT NULL,
+          overall_score INTEGER,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (resume_id) REFERENCES resumes(id),
+          FOREIGN KEY (jd_id) REFERENCES jds(id)
+        );
+      `);
+      // persist initial DB
+      const data = db.export();
+      fs.writeFileSync(DB_PATH, Buffer.from(data));
+    }
+    dbReady = true;
+  } catch (err: any) {
+    dbInitError = err;
+    console.error('Database initialization failed:', err);
+    throw err;
   }
+}
+
+// Initialize database and store the promise
+function ensureDatabaseInitialized(): Promise<void> {
+  if (dbReady) {
+    return Promise.resolve();
+  }
+  if (dbInitError) {
+    return Promise.reject(dbInitError);
+  }
+  if (!dbInitPromise) {
+    dbInitPromise = initDatabase();
+  }
+  return dbInitPromise;
 }
 
 // Helper function to save DB to disk
 function saveDatabase() {
+  if (!dbReady || !db) {
+    throw new Error('Database is not ready');
+  }
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
 // Helper function to generate UUID
 function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
 
-// Export db for use in controllers
-export { db, saveDatabase, generateUUID };
+// Database readiness middleware
+async function dbReadyMiddleware(req: any, res: any, next: any) {
+  try {
+    await ensureDatabaseInitialized();
+    next();
+  } catch (error: any) {
+    console.error('Database not ready:', error);
+    res.status(503).json({
+      error: 'Database is not ready',
+      message: error.message || 'Service temporarily unavailable',
+    });
+  }
+}
 
-// Initialize DB and start the server after DB is ready
+// Export db for use in controllers (with getter to ensure it's ready)
+function getDb() {
+  if (!dbReady || !db) {
+    throw new Error('Database is not ready');
+  }
+  console.log('db :>> ', db);
+  return db;
+}
+
+export { getDb as db, saveDatabase, generateUUID, ensureDatabaseInitialized };
+
+// Initialize DB and start the server after DB is ready (only in non-serverless environments)
 (async () => {
   try {
-    await initDatabase();
-    app.listen(3001, () => console.log('✅ Server running on port 3001'));
+    await ensureDatabaseInitialized();
+    // Only start HTTP server if not in Vercel serverless environment
+    if (!process.env.VERCEL) {
+      app.listen(3001, () => console.log('✅ Server running on port 3001'));
+    }
   } catch (err) {
     console.error('Failed to initialize DB or start server:', err);
-    process.exit(1);
+    if (!process.env.VERCEL) {
+      process.exit(1);
+    }
   }
 })();
 
@@ -129,6 +211,16 @@ export { db, saveDatabase, generateUUID };
 app.get('/', async (req: any, res: any) => {
   console.log('Server running');
   res.json({ message: 'Server is running' });
+});
+
+app.get('/health', async (req: any, res: any) => {
+  const dbStatus = dbReady ? 'ready' : 'initializing';
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    database: dbStatus,
+  });
 });
 
 // POST /resumes - Upload and store resume
@@ -169,7 +261,8 @@ app.post('/resumes', upload.single('resume'), async (req: any, res: any) => {
     const id = generateUUID();
     const createdAt = new Date().toISOString();
 
-    db.run(
+    const currentDb = getDb();
+    currentDb.run(
       'INSERT INTO resumes (id, identifier, resume_file, resume_parsed_text, created_at) VALUES (?, ?, ?, ?, ?)',
       [id, identifier, dataBuffer, resumeText, createdAt]
     );
@@ -193,7 +286,9 @@ app.post('/resumes', upload.single('resume'), async (req: any, res: any) => {
 
     // Check if it's a timeout error
     if (error.message.includes('timeout')) {
-      return res.status(408).json({ error: 'PDF parsing timeout after 30 seconds' });
+      return res
+        .status(408)
+        .json({ error: 'PDF parsing timeout after 30 seconds' });
     }
 
     res.status(500).json({ error: error.message || 'Failed to upload resume' });
@@ -203,7 +298,10 @@ app.post('/resumes', upload.single('resume'), async (req: any, res: any) => {
 // GET /resumes - Get all stored resumes
 app.get('/resumes', async (req: any, res: any) => {
   try {
-    const result = db.exec('SELECT id, identifier, created_at FROM resumes ORDER BY created_at DESC');
+    const currentDb = getDb();
+    const result = currentDb.exec(
+      'SELECT id, identifier, created_at FROM resumes ORDER BY created_at DESC'
+    );
 
     if (result.length === 0) {
       return res.json([]);
@@ -226,7 +324,8 @@ app.get('/resumes', async (req: any, res: any) => {
 app.delete('/resumes/:id', async (req: any, res: any) => {
   try {
     const { id } = req.params;
-    db.run('DELETE FROM resumes WHERE id = ?', [id]);
+    const currentDb = getDb();
+    currentDb.run('DELETE FROM resumes WHERE id = ?', [id]);
     saveDatabase();
     res.json({ message: 'Resume deleted successfully' });
   } catch (error: any) {
@@ -241,19 +340,26 @@ app.post('/jds', async (req: any, res: any) => {
     const { company_name, jd_text } = req.body;
 
     if (!company_name || !jd_text) {
-      return res.status(400).json({ error: 'company_name and jd_text are required' });
+      return res
+        .status(400)
+        .json({ error: 'company_name and jd_text are required' });
     }
 
     const id = generateUUID();
     const createdAt = new Date().toISOString();
 
-    db.run(
+    const currentDb = getDb();
+    currentDb.run(
       'INSERT INTO jds (id, company_name, jd_text, created_at) VALUES (?, ?, ?, ?)',
       [id, company_name, jd_text, createdAt]
     );
     saveDatabase();
 
-    res.json({ id, company_name, message: 'Job description stored successfully' });
+    res.json({
+      id,
+      company_name,
+      message: 'Job description stored successfully',
+    });
   } catch (error: any) {
     console.error('Error storing JD:', error);
     res.status(500).json({ error: 'Failed to store job description' });
@@ -270,15 +376,19 @@ app.post('/analyze-batch', async (req: any, res: any) => {
     }
 
     if (!process.env.OPENROUTER_API_KEY) {
-      return res.status(500).json({ error: 'OPENROUTER_API_KEY not set in .env' });
+      return res
+        .status(500)
+        .json({ error: 'OPENROUTER_API_KEY not set in .env' });
     }
+
+    const currentDb = getDb();
 
     // Store JD if not already stored
     let actualJdId = jd_id;
     if (!actualJdId) {
       actualJdId = generateUUID();
       const createdAt = new Date().toISOString();
-      db.run(
+      currentDb.run(
         'INSERT INTO jds (id, company_name, jd_text, created_at) VALUES (?, ?, ?, ?)',
         [actualJdId, company_name || 'Unknown', jd_text, createdAt]
       );
@@ -291,10 +401,12 @@ app.post('/analyze-batch', async (req: any, res: any) => {
       // Build a parameterized query for specific resume IDs
       const placeholders = resume_ids.map(() => '?').join(',');
       const query = `SELECT id, identifier, resume_parsed_text FROM resumes WHERE id IN (${placeholders})`;
-      resumesResult = db.exec(query, resume_ids);
+      resumesResult = currentDb.exec(query, resume_ids);
     } else {
       // Get all resumes if no specific IDs provided
-      resumesResult = db.exec('SELECT id, identifier, resume_parsed_text FROM resumes');
+      resumesResult = currentDb.exec(
+        'SELECT id, identifier, resume_parsed_text FROM resumes'
+      );
     }
 
     if (resumesResult.length === 0 || resumesResult[0].values.length === 0) {
@@ -315,7 +427,9 @@ app.post('/analyze-batch', async (req: any, res: any) => {
         console.log(`\n📝 Analyzing resume: ${resume.identifier}`);
         const prompt = getPrompt(jd_text, resume.parsed_text);
 
-        console.log(`🚀 Sending request to OpenRouter for ${resume.identifier}...`);
+        console.log(
+          `🚀 Sending request to OpenRouter for ${resume.identifier}...`
+        );
         const response = await axios.post(
           OPENROUTER_API,
           {
@@ -337,27 +451,42 @@ app.post('/analyze-batch', async (req: any, res: any) => {
         }
 
         const analysisText = message.content;
-        console.log(`✅ Received response for ${resume.identifier}, length: ${analysisText.length}`);
+        console.log(
+          `✅ Received response for ${resume.identifier}, length: ${analysisText.length}`
+        );
 
         let analysisJson: any;
         try {
           analysisJson = JSON.parse(analysisText);
           console.log(`✅ Parsed JSON successfully for ${resume.identifier}`);
         } catch (e) {
-          console.warn(`⚠️  Failed to parse JSON for ${resume.identifier}, storing as raw`);
+          console.warn(
+            `⚠️  Failed to parse JSON for ${resume.identifier}, storing as raw`
+          );
+          console.log('e :>> ', e);
+
           analysisJson = { raw: analysisText, 'Overall Score': 0 };
         }
 
         const overallScore = analysisJson['Overall Score'] || 0;
-        console.log(`📊 Overall Score for ${resume.identifier}: ${overallScore}`);
+        console.log(
+          `📊 Overall Score for ${resume.identifier}: ${overallScore}`
+        );
 
         // Store analysis in database
         const analysisId = generateUUID();
         const createdAt = new Date().toISOString();
 
-        db.run(
+        currentDb.run(
           'INSERT INTO analysis (id, resume_id, jd_id, analysis, overall_score, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [analysisId, resume.id, actualJdId, analysisText, overallScore, createdAt]
+          [
+            analysisId,
+            resume.id,
+            actualJdId,
+            analysisText,
+            overallScore,
+            createdAt,
+          ]
         );
 
         results.push({
@@ -367,9 +496,16 @@ app.post('/analyze-batch', async (req: any, res: any) => {
           analysis: analysisJson,
         });
       } catch (err: any) {
-        console.error(`❌ Error analyzing resume ${resume.identifier}:`, err.message);
+        console.error(
+          `❌ Error analyzing resume ${resume.identifier}:`,
+          err.message
+        );
         if (err.response) {
-          console.error('Response error:', err.response.status, err.response.data);
+          console.error(
+            'Response error:',
+            err.response.status,
+            err.response.data
+          );
         }
         results.push({
           resume_id: resume.id,
@@ -392,7 +528,9 @@ app.post('/analyze-batch', async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Error in batch analysis:', error);
-    res.status(500).json({ error: error.message || 'Failed to analyze resumes' });
+    res
+      .status(500)
+      .json({ error: error.message || 'Failed to analyze resumes' });
   }
 });
 
@@ -401,7 +539,8 @@ app.get('/analysis/:jd_id', async (req: any, res: any) => {
   try {
     const { jd_id } = req.params;
 
-    const result = db.exec(
+    const currentDb = getDb();
+    const result = currentDb.exec(
       `SELECT a.id, a.resume_id, r.identifier, a.analysis, a.overall_score, a.created_at
        FROM analysis a
        JOIN resumes r ON a.resume_id = r.id
