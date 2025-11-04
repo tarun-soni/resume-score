@@ -40,9 +40,13 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
+// On Vercel, use /tmp for uploads; otherwise use myUploads directory
+const uploadDir = process.env.VERCEL ? '/tmp' : './myUploads';
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, './myUploads');
+    cb(null, uploadDir);
   },
 
   filename: function (req, file, cb) {
@@ -52,8 +56,11 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage });
-// Initialize or open SQLite DB at backend/data/resumes.db (using sql.js in-memory WASM)
-const DATA_DIR = path.join(__dirname, '..', 'data');
+// Initialize or open SQLite DB (using sql.js in-memory WASM)
+// On Vercel, use /tmp for writable filesystem; otherwise use data directory
+const DATA_DIR = process.env.VERCEL
+  ? '/tmp'
+  : path.join(__dirname, '..', 'data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = path.join(DATA_DIR, 'resumes.db');
 
@@ -125,14 +132,19 @@ function generateUUID() {
 // Export db for use in controllers
 export { db, saveDatabase, generateUUID };
 
-// Initialize DB and start the server after DB is ready
+// Initialize DB and start the server after DB is ready (only in non-serverless environments)
 (async () => {
   try {
     await initDatabase();
-    app.listen(3001, () => console.log('✅ Server running on port 3001'));
+    // Only start HTTP server if not in Vercel serverless environment
+    if (!process.env.VERCEL) {
+      app.listen(3001, () => console.log('✅ Server running on port 3001'));
+    }
   } catch (err) {
     console.error('Failed to initialize DB or start server:', err);
-    process.exit(1);
+    if (!process.env.VERCEL) {
+      process.exit(1);
+    }
   }
 })();
 

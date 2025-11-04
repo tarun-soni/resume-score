@@ -8,8 +8,14 @@
     "strict": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "declaration": false,
+    "sourceMap": false
   },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules", "dist", "test_files"],
   "ts-node": {
     "esm": false
   }
