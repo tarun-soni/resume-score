@@ -15,11 +15,23 @@ const { PDFParse } = require('pdf-parse');
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const app = express();
 
+// For Vercel serverless deployment
+export default app;
+
 // Enable CORS for frontend
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'http://localhost:3000',
+];
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.includes(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+    res.header(
+      'Access-Control-Allow-Methods',
+      'GET, POST, PUT, DELETE, OPTIONS'
+    );
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -103,9 +115,9 @@ function saveDatabase() {
 
 // Helper function to generate UUID
 function generateUUID() {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0;
-    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
 }
@@ -193,7 +205,9 @@ app.post('/resumes', upload.single('resume'), async (req: any, res: any) => {
 
     // Check if it's a timeout error
     if (error.message.includes('timeout')) {
-      return res.status(408).json({ error: 'PDF parsing timeout after 30 seconds' });
+      return res
+        .status(408)
+        .json({ error: 'PDF parsing timeout after 30 seconds' });
     }
 
     res.status(500).json({ error: error.message || 'Failed to upload resume' });
@@ -203,7 +217,9 @@ app.post('/resumes', upload.single('resume'), async (req: any, res: any) => {
 // GET /resumes - Get all stored resumes
 app.get('/resumes', async (req: any, res: any) => {
   try {
-    const result = db.exec('SELECT id, identifier, created_at FROM resumes ORDER BY created_at DESC');
+    const result = db.exec(
+      'SELECT id, identifier, created_at FROM resumes ORDER BY created_at DESC'
+    );
 
     if (result.length === 0) {
       return res.json([]);
@@ -241,7 +257,9 @@ app.post('/jds', async (req: any, res: any) => {
     const { company_name, jd_text } = req.body;
 
     if (!company_name || !jd_text) {
-      return res.status(400).json({ error: 'company_name and jd_text are required' });
+      return res
+        .status(400)
+        .json({ error: 'company_name and jd_text are required' });
     }
 
     const id = generateUUID();
@@ -253,7 +271,11 @@ app.post('/jds', async (req: any, res: any) => {
     );
     saveDatabase();
 
-    res.json({ id, company_name, message: 'Job description stored successfully' });
+    res.json({
+      id,
+      company_name,
+      message: 'Job description stored successfully',
+    });
   } catch (error: any) {
     console.error('Error storing JD:', error);
     res.status(500).json({ error: 'Failed to store job description' });
@@ -270,7 +292,9 @@ app.post('/analyze-batch', async (req: any, res: any) => {
     }
 
     if (!process.env.OPENROUTER_API_KEY) {
-      return res.status(500).json({ error: 'OPENROUTER_API_KEY not set in .env' });
+      return res
+        .status(500)
+        .json({ error: 'OPENROUTER_API_KEY not set in .env' });
     }
 
     // Store JD if not already stored
@@ -294,7 +318,9 @@ app.post('/analyze-batch', async (req: any, res: any) => {
       resumesResult = db.exec(query, resume_ids);
     } else {
       // Get all resumes if no specific IDs provided
-      resumesResult = db.exec('SELECT id, identifier, resume_parsed_text FROM resumes');
+      resumesResult = db.exec(
+        'SELECT id, identifier, resume_parsed_text FROM resumes'
+      );
     }
 
     if (resumesResult.length === 0 || resumesResult[0].values.length === 0) {
@@ -315,7 +341,9 @@ app.post('/analyze-batch', async (req: any, res: any) => {
         console.log(`\n📝 Analyzing resume: ${resume.identifier}`);
         const prompt = getPrompt(jd_text, resume.parsed_text);
 
-        console.log(`🚀 Sending request to OpenRouter for ${resume.identifier}...`);
+        console.log(
+          `🚀 Sending request to OpenRouter for ${resume.identifier}...`
+        );
         const response = await axios.post(
           OPENROUTER_API,
           {
@@ -337,19 +365,27 @@ app.post('/analyze-batch', async (req: any, res: any) => {
         }
 
         const analysisText = message.content;
-        console.log(`✅ Received response for ${resume.identifier}, length: ${analysisText.length}`);
+        console.log(
+          `✅ Received response for ${resume.identifier}, length: ${analysisText.length}`
+        );
 
         let analysisJson: any;
         try {
           analysisJson = JSON.parse(analysisText);
           console.log(`✅ Parsed JSON successfully for ${resume.identifier}`);
         } catch (e) {
-          console.warn(`⚠️  Failed to parse JSON for ${resume.identifier}, storing as raw`);
+          console.warn(
+            `⚠️  Failed to parse JSON for ${resume.identifier}, storing as raw`
+          );
+          console.log('e :>> ', e);
+
           analysisJson = { raw: analysisText, 'Overall Score': 0 };
         }
 
         const overallScore = analysisJson['Overall Score'] || 0;
-        console.log(`📊 Overall Score for ${resume.identifier}: ${overallScore}`);
+        console.log(
+          `📊 Overall Score for ${resume.identifier}: ${overallScore}`
+        );
 
         // Store analysis in database
         const analysisId = generateUUID();
@@ -357,7 +393,14 @@ app.post('/analyze-batch', async (req: any, res: any) => {
 
         db.run(
           'INSERT INTO analysis (id, resume_id, jd_id, analysis, overall_score, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-          [analysisId, resume.id, actualJdId, analysisText, overallScore, createdAt]
+          [
+            analysisId,
+            resume.id,
+            actualJdId,
+            analysisText,
+            overallScore,
+            createdAt,
+          ]
         );
 
         results.push({
@@ -367,9 +410,16 @@ app.post('/analyze-batch', async (req: any, res: any) => {
           analysis: analysisJson,
         });
       } catch (err: any) {
-        console.error(`❌ Error analyzing resume ${resume.identifier}:`, err.message);
+        console.error(
+          `❌ Error analyzing resume ${resume.identifier}:`,
+          err.message
+        );
         if (err.response) {
-          console.error('Response error:', err.response.status, err.response.data);
+          console.error(
+            'Response error:',
+            err.response.status,
+            err.response.data
+          );
         }
         results.push({
           resume_id: resume.id,
@@ -392,7 +442,9 @@ app.post('/analyze-batch', async (req: any, res: any) => {
     });
   } catch (error: any) {
     console.error('Error in batch analysis:', error);
-    res.status(500).json({ error: error.message || 'Failed to analyze resumes' });
+    res
+      .status(500)
+      .json({ error: error.message || 'Failed to analyze resumes' });
   }
 });
 
