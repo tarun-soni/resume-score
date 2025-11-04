@@ -6,6 +6,10 @@ test_files
 data/
 myUploads/
 
+# Backend build output
+backend/dist/
+api/
+
 # Frontend
 frontend/.next/
 frontend/out/
