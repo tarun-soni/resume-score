@@ -155,6 +155,14 @@ app.get('/', async (req: any, res: any) => {
   res.json({ message: 'Server is running' });
 });
 
+app.get('/health', async (req: any, res: any) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 // POST /resumes - Upload and store resume
 app.post('/resumes', upload.single('resume'), async (req: any, res: any) => {
   try {
