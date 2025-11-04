@@ -1,8 +1,12 @@
 {
-  "buildCommand": "mkdir -p ../public ../api && npm install && npm run build",
+  "buildCommand": "npm install && npm run build && mkdir -p ../api && cp api/server.js ../api/server.js",
   "installCommand": "npm install",
   "framework": null,
-  "outputDirectory": "../public",
+  "functions": {
+    "api/server.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",

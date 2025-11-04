@@ -15,8 +15,8 @@ const { PDFParse } = require('pdf-parse');
 const OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions';
 const app = express();
 
-// For Vercel serverless deployment
-export default app;
+// For Vercel serverless deployment - use CommonJS export for proper serverless function recognition
+module.exports = app;
 
 // Enable CORS for frontend
 const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
