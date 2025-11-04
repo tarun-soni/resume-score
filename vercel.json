@@ -2,6 +2,7 @@
   "buildCommand": "npm install && npm run build",
   "installCommand": "npm install",
   "framework": null,
+  "outputDirectory": "public",
   "rewrites": [
     {
       "source": "/(.*)",
